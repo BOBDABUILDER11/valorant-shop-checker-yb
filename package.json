@@ -2,10 +2,9 @@
   "name": "valorant-shop-checker-dev",
   "private": true,
   "scripts": {
-    "dev:backend": "cd backend && .venv\\Scripts\\python -m uvicorn app.main:app --reload",
+    "dev:backend": ".venv/bin/python -m uvicorn app.main:app --app-dir backend --reload",
     "dev:frontend": "cd frontend && npm run dev",
-    "dev:callback": "python riot_callback.py",
-    "dev": "concurrently -k \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:callback\""
+    "dev": "concurrently -k \"npm run dev:backend\" \"npm run dev:frontend\""
   },
   "devDependencies": {
     "concurrently": "^10.0.4"

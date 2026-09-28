@@ -1,34 +1,11 @@
-# VALSHOP Windows Companion
+# VALSHOP macOS Companion
 
-The companion checks the storefront after reset and uploads only resolved shop metadata. Riot access tokens stay on the PC in Windows Credential Manager and are never uploaded; VALSHOP never receives or stores a Riot password. The dedicated cloud device token is also stored by `keyring` in Windows Credential Manager.
+From the repository root, run `./scripts/setup_mac.sh`, then `./scripts/run_mac.sh`. See the [complete Mac setup guide](../README.md#run-on-macos) for Python requirements, Riot sign-in, website pairing, notifications, startup, updating and troubleshooting.
 
-## Install and connect
+The PySide6 window and menu bar app reuse the shared Riot/store parsing and cloud sync. Riot sessions and device credentials use macOS Keychain. Closing the window keeps the process running; quitting it stops background checks.
 
-```powershell
-cd companion
-py -3.12 -m venv .venv
-.venv\Scripts\python -m pip install -e .
-Copy-Item .env.example .env
-```
+Riot redirects to port 80, which is privileged on macOS. The companion opens your browser and accepts the full redirect URL in a masked dialog. It validates the redirect origin and per-login state locally; it never starts a privileged server. Cancel leaves the existing connection untouched. Reconnect locally when Riot's session expires.
 
-In VALSHOP, open **Settings → Create device token**. Copy the token once, then:
+Settings registers optional startup for the next login through `~/Library/LaunchAgents/com.valshop.companion.plist`. It uses this checkout's Python interpreter and launcher, runs without a shell or administrator rights, and honors explicit Quit. Disabling startup removes registration for subsequent logins and leaves the current session running.
 
-```powershell
-.venv\Scripts\python app.py configure --device-token YOUR_DEVICE_TOKEN
-.venv\Scripts\python app.py run
-```
-
-Complete Riot sign-in in the companion, pair the device once through the website, and leave it running in the tray. Daily Shop, Bundles, Wallet and Night Market data are synchronized to the website. When Riot's short-lived session expires, the companion reports `reauth_required`; reconnect Riot locally and it resumes on the next retry.
-
-## Windows startup
-
-This is opt-in and uses the current user’s `HKCU` Run key, so it does not require administrator access:
-
-```powershell
-.venv\Scripts\python app.py startup enable
-.venv\Scripts\python app.py startup disable
-```
-
-Successful checks schedule shortly after Riot’s reset boundary with jitter. Failures use exponential backoff capped at one hour. For development only, set `COMPANION_DEV_INTERVAL_SECONDS=60`.
-
-The unofficial Riot session cannot be refreshed indefinitely. VALSHOP deliberately uses graceful reauthentication rather than storing credentials or pretending refresh is possible.
+`companion/.env` is read consistently whether launched from Terminal or at login. Its values override `release_config.json`. For local services, copy `.env.example` to `.env`. Production defaults are already included in `release_config.json`.

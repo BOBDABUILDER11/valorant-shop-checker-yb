@@ -1,40 +1,9 @@
-# Releasing VALSHOP
+# Releasing VALSHOP for macOS
 
-`companion/version.py` is the authoritative desktop version. The executable metadata and Inno Setup version are derived from it.
+The companion is distributed as source and launched from Terminal. `companion/version.py` is the desktop version. Tag that version as `vX.Y.Z` after the macOS workflow passes. There is no Windows installer or macOS binary signing step for this source distribution.
 
-## Build configuration
+Production endpoint defaults live in `companion/release_config.json`. `companion/.env` can override `API_BASE_URL`, `PUBLIC_SITE_URL`, `UPDATE_METADATA_URL`, and `UPDATE_DOWNLOAD_URL`. Configure an HTTPS metadata endpoint returning `{"version":"1.2.3","download_url":"https://github.com/ybeeee123-wq/valorant-shop-checker-yb#run-on-macos"}` to enable the in-app update check. The update button opens instructions; quit the companion, pull changes in a clean checkout, rerun setup and restart.
 
-Set these before building a production artifact:
+Before releasing, run the checks in the root README on macOS. Manually verify sign-in with a real Riot account, shop/wallet/bundle/Night Market sync, pairing and revocation, notifications with permissions enabled, menu bar actions, startup after logout/login and wake catch-up. Automated checks use synthetic sessions and do not establish that live Riot authentication or cloud deployment is functioning.
 
-- `VALSHOP_API_BASE_URL` — public HTTPS FastAPI origin
-- `VALSHOP_PUBLIC_SITE_URL` — public HTTPS React origin
-- `VALSHOP_UPDATE_METADATA_URL` — HTTPS JSON endpoint containing `version` and optionally `download_url`
-- `VALSHOP_UPDATE_DOWNLOAD_URL` — trusted release/download page fallback
-
-Optional signing variables:
-
-- `WINDOWS_CERTIFICATE` — path to a real `.pfx`
-- `WINDOWS_CERTIFICATE_PASSWORD`
-
-Backend production variables: `DATABASE_URL`, `PUBLIC_SITE_URL`, `ALLOWED_ORIGINS`, `ENCRYPTION_KEY`, `ENVIRONMENT=production`, and optional `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. Frontend uses `VITE_API_URL`.
-
-## Build
-
-Install Python 3.12, Node.js, and Inno Setup 6 on a Windows build host, then run:
-
-```bat
-scripts\build_windows.bat
-```
-
-Expected outputs are `dist\VALSHOP\VALSHOP.exe` and, when Inno Setup is available, `release\VALSHOP-Setup.exe`. The script must finish its packaged executable smoke run before an artifact is published. Install the generated setup into a clean test location, launch it, inspect tray/startup behavior and shortcuts, then uninstall it.
-
-For a GitHub release, tag the same version as `vX.Y.Z`. The Windows workflow validates all layers and uploads build artifacts. Signing is optional for development but strongly recommended for public releases.
-
-## Deployment order
-
-1. Provision Postgres/Supabase and apply `backend/migrations/001_persistent_features.sql`.
-2. Configure and deploy the backend Docker image; verify `/health` over HTTPS.
-3. Build/deploy the frontend with `VITE_API_URL`; add its exact origin to backend CORS.
-4. Configure update metadata and download URLs.
-5. Build/sign/test the Windows installer with the production endpoints embedded.
-6. Publish the installer and update metadata together.
+Deploy the backend and frontend following `DEPLOYMENT.md`, configure companion endpoints, and publish the source tag and metadata together. Web Push and Discord remain backend notification channels.

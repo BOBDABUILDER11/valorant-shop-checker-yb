@@ -1,11 +1,11 @@
 import json
-import urllib.request
 from datetime import UTC, datetime, timedelta
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
 import preferences
-from callback import LocalCallback
+from callback import CallbackError, start_login, validate_callback
 from credentials import CredentialStore
 from local_riot import LocalRiotClient
 from local_store import LocalStore
@@ -80,26 +80,29 @@ def test_preferences_persist(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert preferences.Preferences().get("launch_minimized") is True
 
 
-def test_callback_listener_lifecycle() -> None:
-    callback = LocalCallback(port=0)
-    callback.start()
-    try:
-        with urllib.request.urlopen(
-            f"http://127.0.0.1:{callback.port}/redirect", timeout=2
-        ) as response:
-            assert response.status == 200
-        payload = json.dumps(
-            {"url": "http://localhost/redirect#access_token=test"}
-        ).encode()
-        request = urllib.request.Request(
-            f"http://127.0.0.1:{callback.port}/complete",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(request, timeout=2) as response:
-            assert response.status == 200
-        assert callback.wait(timeout=2).endswith("access_token=test")
-        assert callback.server is None
-    finally:
-        callback.stop()
+def test_login_state_is_unique_and_validates_redirect() -> None:
+    auth_url, state = start_login()
+    params = parse_qs(urlparse(auth_url).query)
+    assert params["state"] == [state]
+    assert params["nonce"] != ["1"]
+    assert start_login()[1] != state
+    callback = f"http://localhost/redirect#access_token=test&id_token=test-id&state={state}"
+    assert validate_callback(callback, state) == callback
+
+
+@pytest.mark.parametrize("url", [
+    "http://evil.example/redirect#access_token=test&id_token=id&state=expected",
+    "http://localhost:8080/redirect#access_token=test&id_token=id&state=expected",
+    "http://localhost/redirect#access_token=test&id_token=id&state=other",
+    "http://localhost/redirect#access_token=test&id_token=id",
+    "http://localhost/redirect#access_token=test&access_token=other&id_token=id&state=expected",
+    "http://localhost/redirect#access_token=test&id_token=id&state=expected&state=other",
+    "http://user@localhost/redirect#access_token=test&id_token=id&state=expected",
+    "http://localhost:bad/redirect#access_token=test&id_token=id&state=expected",
+    "http://localhost/redirect?access_token=test#id_token=id&state=expected",
+])
+def test_invalid_login_does_not_expose_tokens(url: str) -> None:
+    with pytest.raises(CallbackError) as error:
+        validate_callback(url, "expected")
+    assert "access_token" not in str(error.value)
+    assert url not in str(error.value)

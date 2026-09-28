@@ -8,14 +8,14 @@ export default function ConnectCompanionPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const challenge = params.get('challenge') ?? '';
-  const [device, setDevice] = useState('Windows PC');
+  const [device, setDevice] = useState('Mac');
   const [status, setStatus] = useState<'loading' | 'ready' | 'approved' | 'expired' | 'error'>(challenge ? 'loading' : 'expired');
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (!challenge) return;
     void api.getPairingStatus(challenge).then((result) => {
-      setDevice(result.device_name || 'Windows PC');
+      setDevice(result.device_name || 'Mac');
       setStatus(result.status === 'expired' ? 'expired' : 'ready');
     }).catch((reason: Error) => { setError(reason.message); setStatus('error'); });
   }, [challenge]);

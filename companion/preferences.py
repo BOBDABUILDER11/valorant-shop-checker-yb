@@ -4,7 +4,7 @@ from paths import SETTINGS_FILE, ensure_directories
 
 DEFAULTS = {
     "onboarding_complete": False,
-    "start_with_windows": False,
+    "start_at_login": False,
     "launch_minimized": False,
     "notifications_enabled": True,
     "close_notice_shown": False,

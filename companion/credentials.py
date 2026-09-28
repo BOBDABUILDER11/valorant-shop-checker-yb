@@ -15,7 +15,11 @@ class CredentialBackend(Protocol):
 
 
 class CredentialStore:
-    def __init__(self, backend: CredentialBackend = keyring) -> None:
+    def __init__(self, backend: CredentialBackend | None = None) -> None:
+        if backend is None:
+            from keyring.backends.macOS import Keyring
+
+            backend = Keyring()
         self.backend = backend
 
     def save_riot_session(self, session: dict) -> None:

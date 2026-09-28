@@ -21,10 +21,10 @@ class Settings(BaseSettings):
     PUBLIC_SITE_URL: str = release.get("public_site_url", "http://localhost:5173")
     UPDATE_METADATA_URL: str = release.get("update_metadata_url", "")
     UPDATE_DOWNLOAD_URL: str = release.get("update_download_url", "")
-    COMPANION_DEVICE_NAME: str = "Windows PC"
+    COMPANION_DEVICE_NAME: str = ""
     COMPANION_DEV_INTERVAL_SECONDS: int = 0
     COMPANION_JITTER_SECONDS: int = 90
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": Path(__file__).parent / ".env", "env_file_encoding": "utf-8"}
 
 
 settings = Settings()

@@ -9,7 +9,7 @@ import Brand from '../components/Brand';
 type Stage = 'start' | 'paste';
 
 const INSTALLER_URL = import.meta.env.VITE_INSTALLER_URL
-  ?? 'https://github.com/ybeeee123-wq/valorant-shop-checker-yb/releases/latest/download/VALSHOP-Setup.exe';
+  ?? 'https://github.com/ybeeee123-wq/valorant-shop-checker-yb/#run-on-macos';
 
 export default function LoginPage() {
   const { state, dispatch } = useAuth();
@@ -92,8 +92,8 @@ export default function LoginPage() {
               </button>
               <a className="installer-button" href={INSTALLER_URL}>
                 <DownloadIcon className="h-4 w-4" />
-                <span><strong>Install for Windows</strong><small>Background checks and native alerts</small></span>
-                <span className="installer-meta">Windows 10/11</span>
+                <span><strong>Set up for Mac</strong><small>Background checks and native alerts</small></span>
+                <span className="installer-meta">macOS · Terminal</span>
               </a>
               <div className="security-note">
                 <ShieldIcon className="h-[18px] w-[18px]" />
@@ -105,7 +105,7 @@ export default function LoginPage() {
             <div className="login-action-block stage-enter">
               <div className="fallback-intro">
                 <span>Fallback sign-in</span>
-                <p>After signing in with Riot, the callback usually returns automatically. If it didn’t, paste the full localhost URL below.</p>
+                <p>After Riot redirects to localhost, copy the full address from your browser and paste it below. A browser connection error is expected.</p>
               </div>
               <form onSubmit={handleSubmitUrl} className="callback-form">
                 <label htmlFor="riot-callback-url">Riot callback URL</label>
@@ -125,7 +125,7 @@ export default function LoginPage() {
           <ol className="onboarding-steps">
             <li><i>01</i><div><strong>Sign in through Riot</strong><p>Use Riot’s official login page. Your password never passes through VALSHOP.</p></div></li>
             <li><i>02</i><div><strong>Open your shop anywhere</strong><p>Your daily offers, bundles, wishlist, and Night Market live on this website.</p></div></li>
-            <li><i>03</i><div><strong>Install the companion</strong><p>Optional, but recommended for automatic checks and Windows notifications.</p></div></li>
+            <li><i>03</i><div><strong>Install the companion</strong><p>Optional, but recommended for automatic checks and macOS notifications.</p></div></li>
           </ol>
           <div className="preview-trust"><ShieldIcon className="h-5 w-5" /><span><strong>Built for privacy</strong>Independent, password-free Riot connection.</span></div>
         </aside>

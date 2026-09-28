@@ -1,23 +1,42 @@
+"""Register the source companion for the next macOS login, without administrator access."""
+import os
+import plistlib
 import sys
 from pathlib import Path
 
-RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+from paths import LOG_DIR, ensure_directories
+
+AGENT_FILE = Path.home() / "Library" / "LaunchAgents" / "com.valshop.companion.plist"
 
 
-def set_startup(enabled: bool, value_name: str = "VALSHOP Companion") -> None:
-    if sys.platform != "win32":
-        raise RuntimeError("Automatic startup registration is only supported on Windows")
-    import winreg
+def startup_enabled() -> bool:
+    return AGENT_FILE.is_file()
 
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
-        if enabled:
-            if getattr(sys, "frozen", False):
-                command = f'"{sys.executable}" --minimized'
-            else:
-                command = f'"{sys.executable}" "{Path(__file__).with_name("launcher.py")}"'
-            winreg.SetValueEx(key, value_name, 0, winreg.REG_SZ, command)
-        else:
-            try:
-                winreg.DeleteValue(key, value_name)
-            except FileNotFoundError:
-                pass
+
+def set_startup(enabled: bool) -> None:
+    if sys.platform != "darwin":
+        raise RuntimeError("VALSHOP Companion requires macOS.")
+    if not enabled:
+        AGENT_FILE.unlink(missing_ok=True)
+        return
+    ensure_directories()
+    launcher = Path(__file__).resolve().with_name("launcher.py")
+    payload = {
+        "Label": "com.valshop.companion",
+        "ProgramArguments": [sys.executable, str(launcher), "--minimized"],
+        "WorkingDirectory": str(launcher.parent.parent),
+        "RunAtLoad": True,
+        "KeepAlive": False,
+        "ProcessType": "Interactive",
+        "LimitLoadToSessionType": "Aqua",
+        "StandardOutPath": str(LOG_DIR / "launch-agent.log"),
+        "StandardErrorPath": str(LOG_DIR / "launch-agent-error.log"),
+    }
+    AGENT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    temporary = AGENT_FILE.with_suffix(".tmp")
+    try:
+        temporary.write_bytes(plistlib.dumps(payload))
+        temporary.chmod(0o600)
+        os.replace(temporary, AGENT_FILE)
+    finally:
+        temporary.unlink(missing_ok=True)

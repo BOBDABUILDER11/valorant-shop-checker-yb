@@ -9,9 +9,8 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 import httpx
-from app.services import riot_auth
 from packaging.version import Version
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, QUrl, Signal
+from PySide6.QtCore import QLockFile, QObject, QRunnable, Qt, QThreadPool, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QApplication,
@@ -20,7 +19,9 @@ from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -30,7 +31,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from callback import LocalCallback
+from callback import CallbackError, start_login, validate_callback
 from cloud_client import CloudClient
 from config import settings
 from credentials import CredentialStore
@@ -38,10 +39,10 @@ from local_riot import LocalRiotClient, RiotConnectionExpired
 from local_store import LocalStore
 from logging_setup import configure_logging
 from pairing import PairingClient
-from paths import LOG_DIR
+from paths import APP_DIR, LOG_DIR, ensure_directories
 from preferences import Preferences
 from scheduler import backoff_seconds
-from startup import set_startup
+from startup import set_startup, startup_enabled
 from version import __version__
 
 logger = logging.getLogger(__name__)
@@ -50,7 +51,7 @@ STYLE = """
 QWidget {
     background: #111311;
     color: #f1f2ed;
-    font-family: "Segoe UI";
+    font-family: ".AppleSystemUIFont";
     font-size: 13px;
 }
 QMainWindow, QDialog { background: #111311; }
@@ -147,22 +148,22 @@ class SettingsDialog(QDialog):
         title = QLabel("Companion settings")
         title.setObjectName("Title")
         layout.addWidget(title)
-        subtitle = QLabel("Background behavior for this Windows device.")
+        subtitle = QLabel("Background behavior for this Mac.")
         subtitle.setObjectName("Muted")
         layout.addWidget(subtitle)
         layout.addSpacing(8)
 
-        self.startup_check = QCheckBox("Start VALSHOP Companion with Windows")
-        self.startup_check.setChecked(bool(window.prefs.get("start_with_windows")))
+        self.startup_check = QCheckBox("Start VALSHOP Companion at login")
+        self.startup_check.setChecked(startup_enabled())
         self.startup_check.toggled.connect(window.toggle_startup)
         layout.addWidget(self.startup_check)
 
-        minimized = QCheckBox("Launch minimized to the system tray")
+        minimized = QCheckBox("Launch minimized to the menu bar")
         minimized.setChecked(bool(window.prefs.get("launch_minimized")))
         minimized.toggled.connect(lambda value: window.prefs.set("launch_minimized", value))
         layout.addWidget(minimized)
 
-        notifications = QCheckBox("Windows wishlist notifications")
+        notifications = QCheckBox("macOS wishlist notifications")
         notifications.setChecked(bool(window.prefs.get("notifications_enabled")))
         notifications.toggled.connect(
             lambda value: window.prefs.set("notifications_enabled", value)
@@ -174,7 +175,7 @@ class SettingsDialog(QDialog):
         open_logs.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(LOG_DIR)))
         )
-        test_notification = QPushButton("Test Windows notification")
+        test_notification = QPushButton("Test macOS notification")
         test_notification.clicked.connect(window.test_notification)
         check_updates = QPushButton("Check for updates")
         check_updates.clicked.connect(window.check_updates)
@@ -187,7 +188,7 @@ class SettingsDialog(QDialog):
         disconnect_device.clicked.connect(window.disconnect_cloud)
         layout.addWidget(disconnect_device)
 
-        forget_riot = QPushButton("Disconnect Riot on this PC")
+        forget_riot = QPushButton("Disconnect Riot on this Mac")
         forget_riot.setObjectName("Danger")
         forget_riot.clicked.connect(window.disconnect_riot)
         layout.addWidget(forget_riot)
@@ -435,22 +436,50 @@ class MainWindow(QMainWindow):
 
     def connect_riot(self) -> None:
         self.connect_button.setEnabled(False)
+        self.tray_reconnect.setEnabled(False)
         self.connect_button.setText("Waiting for Riot...")
-        self.activity_label.setText("Finish signing in through Riot in your browser.")
-
-        def flow() -> dict:
-            callback = LocalCallback()
-            callback.start()
-            webbrowser.open(riot_auth.get_auth_url())
-            url = callback.wait()
-            return asyncio.run(self.riot.connect(url))
-
-        self.run_worker(
-            flow,
-            lambda _result: self._connected(),
-            on_error=self._connect_failed,
-            on_finished=lambda: self.connect_button.setEnabled(True),
+        auth_url, state = start_login()
+        self.activity_label.setText("Sign in with Riot, then paste the redirect URL here.")
+        if not webbrowser.open(auth_url):
+            self._connect_failed("Could not open your browser. Check your default browser setting.")
+            self._finish_connect()
+            return
+        dialog = QInputDialog(self)
+        dialog.setWindowTitle("Connect Riot")
+        dialog.setLabelText(
+            "Sign in on Riot's website in your browser.\n"
+            "When the browser reaches localhost/redirect, it may show a connection error.\n"
+            "Copy the FULL address (Command-L, Command-C) and paste it below.\n"
+            "The URL contains your session; paste it only here."
         )
+        dialog.setTextEchoMode(QLineEdit.EchoMode.Password)
+        dialog.setOkButtonText("Connect")
+        dialog.resize(620, 240)
+        while dialog.exec() == QDialog.DialogCode.Accepted:
+            try:
+                url = validate_callback(dialog.textValue(), state)
+            except CallbackError as exc:
+                QMessageBox.warning(dialog, "Riot sign-in", str(exc))
+                continue
+            dialog.setTextValue("")
+            clipboard = QApplication.clipboard()
+            if clipboard.text().strip() == url:
+                clipboard.clear()
+            self.run_worker(
+                lambda url=url: self.riot.connect(url),
+                lambda _result: self._connected(),
+                on_error=self._connect_failed,
+                on_finished=self._finish_connect,
+            )
+            return
+        dialog.setTextValue("")
+        self.activity_label.setText("Riot sign-in cancelled. Your existing connection is unchanged.")
+        self._finish_connect()
+
+    def _finish_connect(self) -> None:
+        self.connect_button.setEnabled(True)
+        self.tray_reconnect.setEnabled(True)
+        self.connect_button.setText("Reconnect Riot" if self.riot.session else "Connect Riot")
 
     def _connect_failed(self, message: str) -> None:
         self.connect_button.setText("Reconnect Riot" if self.riot.session else "Connect Riot")
@@ -467,12 +496,12 @@ class MainWindow(QMainWindow):
         if QMessageBox.question(
             self,
             "Disconnect Riot",
-            "Remove the locally stored Riot session from this PC?",
+            "Remove the locally stored Riot session from this Mac?",
         ) != QMessageBox.StandardButton.Yes:
             return
         self.riot.disconnect()
         self._update_account()
-        self._set_connection("Reconnect Riot", "Riot is disconnected on this PC.")
+        self._set_connection("Reconnect Riot", "Riot is disconnected on this Mac.")
         self.connect_button.setText("Connect Riot")
         self._report_reauth_required()
 
@@ -495,7 +524,7 @@ class MainWindow(QMainWindow):
             self._update_cloud_state()
 
         self.run_worker(
-            lambda: client.pair(platform.node() or "Windows PC"),
+            lambda: client.pair(settings.COMPANION_DEVICE_NAME or platform.node() or "Mac"),
             paired,
             on_finished=finished,
         )
@@ -508,7 +537,7 @@ class MainWindow(QMainWindow):
         if QMessageBox.question(
             self,
             "Disconnect this device",
-            "Remove this PC from your VALSHOP account? Other PCs are not affected.",
+            "Remove this Mac from your VALSHOP account? Other Macs are not affected.",
         ) != QMessageBox.StandardButton.Yes:
             return
 
@@ -720,7 +749,7 @@ class MainWindow(QMainWindow):
     def toggle_startup(self, value: bool) -> None:
         try:
             set_startup(value)
-            self.prefs.set("start_with_windows", value)
+            self.prefs.set("start_at_login", value)
         except Exception as exc:
             self.show_error(user_error(exc))
             sender = self.sender()
@@ -760,7 +789,7 @@ class MainWindow(QMainWindow):
             box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
             box.exec()
             if box.clickedButton() == download:
-                webbrowser.open(data.get("url") or settings.UPDATE_DOWNLOAD_URL)
+                webbrowser.open(data.get("download_url") or data.get("url") or settings.UPDATE_DOWNLOAD_URL)
 
         self.run_worker(check, result)
 
@@ -780,12 +809,12 @@ class MainWindow(QMainWindow):
         copy = QLabel(
             "The website is your main VALSHOP experience. This companion securely "
             "connects Riot, checks new rotations, syncs them to the website, and "
-            "shows native Windows notifications."
+            "shows native macOS notifications."
         )
         copy.setObjectName("Muted")
         copy.setWordWrap(True)
         layout.addWidget(copy)
-        startup = QCheckBox("Start VALSHOP Companion with Windows")
+        startup = QCheckBox("Start VALSHOP Companion at login")
         startup.setChecked(False)
         layout.addWidget(startup)
         layout.addStretch()
@@ -826,7 +855,7 @@ class MainWindow(QMainWindow):
         if not self.prefs.get("close_notice_shown"):
             self.tray.showMessage(
                 "VALSHOP Companion is still running",
-                "Background shop checks will continue from the system tray.",
+                "Background shop checks will continue from the menu bar.",
                 self.icon,
                 7_000,
             )
@@ -843,6 +872,12 @@ class MainWindow(QMainWindow):
 
 def run_desktop() -> int:
     app = QApplication(sys.argv)
+    ensure_directories()
+    instance_lock = QLockFile(str(APP_DIR / "companion.lock"))
+    instance_lock.setStaleLockTime(0)
+    if not instance_lock.tryLock(100):
+        QMessageBox.information(None, "VALSHOP Companion", "VALSHOP is already running. Open it from the menu bar.")
+        return 0
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("VALSHOP Companion")
     app.setApplicationVersion(__version__)
@@ -853,4 +888,6 @@ def run_desktop() -> int:
     if os.environ.get("VALSHOP_SMOKE_TEST") == "1":
         QTimer.singleShot(1_500, window.close)
         QTimer.singleShot(3_000, window.quit_app)
-    return app.exec()
+    result = app.exec()
+    instance_lock.unlock()
+    return result

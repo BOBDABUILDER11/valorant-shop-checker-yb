@@ -14,8 +14,8 @@ Local development defaults to `sqlite:///./valshop.db`, keeping the existing roo
 After installing backend dependencies, generate keys from `backend/`:
 
 ```powershell
-.venv\Scripts\vapid.exe --gen
-.venv\Scripts\vapid.exe --private-key private_key.pem --applicationServerKey
+.venv/bin/vapid --gen
+.venv/bin/vapid --private-key private_key.pem --applicationServerKey
 ```
 
 Set `VAPID_PRIVATE_KEY=private_key.pem`, set `VAPID_PUBLIC_KEY` to the second command’s output, set `VAPID_SUBJECT` to a monitored `mailto:` URI, and set `PUBLIC_SITE_URL` to the HTTPS frontend origin. PEM files are ignored by Git; provide the private key to production through its secret/file mechanism.
@@ -69,7 +69,7 @@ cd ..\companion
 
 - Riot passwords are never requested or stored.
 - Riot access and entitlement tokens remain only in the existing in-memory backend session.
-- Device tokens are shown once, hashed in Postgres, stored in Windows Credential Manager, and revocable.
+- Device tokens are shown once, hashed in Postgres, stored in macOS Keychain, and revocable.
 - Discord webhooks are encrypted with `ENCRYPTION_KEY`.
 - The callback remains `http://localhost/redirect`; `riot_callback.py` is unchanged.
 - The unofficial Riot flow has no reliable long-lived refresh. Users must sign in again when the backend session expires or the backend restarts.
